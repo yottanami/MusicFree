@@ -81,19 +81,48 @@ export default function PluginList() {
             }
             setLoading(true);
 
-            await Promise.all(
+            const installResults = await Promise.all(
                 results.assets.map(async it => {
-                    await PluginManager.installPluginFromLocalFile(it.uri, {
+                    const result = await PluginManager.installPluginFromLocalFile(it.uri, {
                         notCheckVersion: Config.getConfig(
                             "basic.notCheckPluginVersion",
                         ),
                         useExpoFs: true,
                     });
+                    // 本地文件没有 url，用文件名标识失败的插件
+                    return { ...result, pluginUrl: result.pluginUrl ?? it.name };
                 }),
             );
-            // 初步过滤
 
-            Toast.success(t("toast.installPluginSuccess"));
+            // 检查是否全部安装成功
+            const successResults: IInstallPluginResult[] = [];
+            const failResults: IInstallPluginResult[] = [];
+            for (let i = 0; i < installResults.length; ++i) {
+                if (installResults[i].success) {
+                    successResults.push(installResults[i]);
+                } else {
+                    failResults.push(installResults[i]);
+                }
+            }
+
+            if (!failResults.length) {
+                Toast.success(t("toast.installPluginSuccess"));
+            } else {
+                Toast.warn(successResults.length ? t("toast.partialPluginInstallFailed") : t("toast.allPluginInstallFailed"), {
+                    "type": "warn",
+                    "actionText": t("common.view"),
+                    "onActionClick": () => {
+                        showDialog("SimpleDialog", {
+                            title: t("pluginSetting.menu.pluginInstallFailedDialogTitle"),
+                            content: t("pluginSetting.pluginInstallFailedDialogContent", {
+                                detail: failResults.map(it => (it.pluginUrl ?? "") + "\n" + t("pluginSetting.failReason", {
+                                    reason: it.message ?? "",
+                                })).join("\n-----\n"),
+                            }),
+                        });
+                    },
+                });
+            }
         } catch (e: any) {
             trace("插件安装失败", e?.message);
             Toast.warn(t("toast.installPluginFail", {
